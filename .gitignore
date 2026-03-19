@@ -1,0 +1,17 @@
+﻿# Backend Java/Spring
+backend/target/
+backend/logs/
+backend/*.log
+backend/uploads/images/*
+
+# Mobile React Native / Expo
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/.env
+mobile/android/
+mobile/ios/
+
+# IDE
+.idea/
+*.class
