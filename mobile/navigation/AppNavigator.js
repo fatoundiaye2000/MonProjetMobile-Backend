@@ -1,13 +1,13 @@
 // navigation/AppNavigator.js
+// ✅ Ajout de FavoritesScreen dans la navigation
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import LoginScreen       from '../screens/LoginScreen';
-import RegisterScreen    from '../screens/RegisterScreen';
-import EventsListScreen  from '../screens/EventsListScreen';
+import LoginScreen      from '../screens/LoginScreen';
+import EventsListScreen from '../screens/EventsListScreen';
 import EventDetailScreen from '../screens/EventDetailScreen';
-import FavoritesScreen   from '../screens/FavoritesScreen';
+import FavoritesScreen  from '../screens/FavoritesScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -17,9 +17,9 @@ export default function AppNavigator() {
       <Stack.Navigator
         initialRouteName="Login"
         screenOptions={{
-          headerStyle:      { backgroundColor: '#F97316' },
-          headerTintColor:  '#FFFFFF',
-          headerTitleStyle: { fontWeight: '800', fontSize: 17 },
+          headerStyle:     { backgroundColor: '#F97316' },
+          headerTintColor: '#FFFFFF',
+          headerTitleStyle:{ fontWeight: '800', fontSize: 17 },
         }}
       >
         {/* Login — sans header */}
@@ -29,18 +29,14 @@ export default function AppNavigator() {
           options={{ headerShown: false }}
         />
 
-        {/* Inscription — sans header */}
-        <Stack.Screen
-          name="Register"
-          component={RegisterScreen}
-          options={{ headerShown: false }}
-        />
-
-        {/* Liste des événements — pas de retour vers Login */}
+        {/* Liste des événements */}
         <Stack.Screen
           name="EventsList"
           component={EventsListScreen}
-          options={{ title: 'Événements', headerBackVisible: false }}
+          options={{
+            title: 'Événements',
+            headerBackVisible: false, // pas de retour vers Login
+          }}
         />
 
         {/* Détail d'un événement */}

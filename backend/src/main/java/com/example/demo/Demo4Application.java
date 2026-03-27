@@ -5,7 +5,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import com.example.demo.entities.Role;
 import com.example.demo.entities.User;
 import com.example.demo.repos.RoleRepository;
@@ -62,7 +61,7 @@ public class Demo4Application implements CommandLineRunner {
     }
     
     @Bean
-    CommandLineRunner init_users(BCryptPasswordEncoder bCryptPasswordEncoder) {
+    CommandLineRunner init_users() {
         return args -> {
             try {
                 System.out.println("=== DÉBUT INITIALISATION ===");
@@ -78,28 +77,38 @@ public class Demo4Application implements CommandLineRunner {
                     System.out.println("✔ Rôle USER créé");
                 }
                 
-                // CRÉER LES UTILISATEURS
-                if (userService.findUserByEmail("admin@example.com") == null) {
-                    User admin = new User();
-                    admin.setEmail("admin@example.com");
-                    admin.setPassword(bCryptPasswordEncoder.encode("123"));
-                    admin.setEnabled(true);
-                    admin.setNom("Admin");
-                    admin.setPrenom("System");
-                    userService.saveUser(admin);
-                    System.out.println("✔ Utilisateur admin créé");
+                // CRÉER / METTRE À JOUR LES UTILISATEURS DE TEST
+                // Important: UserServiceImpl#saveUser encode déjà le mot de passe.
+                // Donc on met ici les mots de passe en clair (pas de double encodage).
+                String adminEmail = "admin@example.com";
+                String adminPassword = "Admin123!";
+
+                User admin = userService.findUserByEmail(adminEmail);
+                if (admin == null) {
+                    admin = new User();
+                    admin.setEmail(adminEmail);
                 }
+                admin.setEnabled(true);
+                admin.setNom("Admin");
+                admin.setPrenom("System");
+                admin.setPassword(adminPassword); // en clair
+                userService.saveUser(admin);
+                System.out.println("✔ Compte admin prêt");
                 
-                if (userService.findUserByEmail("user@example.com") == null) {
-                    User user = new User();
-                    user.setEmail("user@example.com");
-                    user.setPassword(bCryptPasswordEncoder.encode("123"));
-                    user.setEnabled(true);
-                    user.setNom("User");
-                    user.setPrenom("Normal");
-                    userService.saveUser(user);
-                    System.out.println("✔ Utilisateur user créé");
+                String userEmail = "user@example.com";
+                String userPassword = "User123!";
+
+                User user = userService.findUserByEmail(userEmail);
+                if (user == null) {
+                    user = new User();
+                    user.setEmail(userEmail);
                 }
+                user.setEnabled(true);
+                user.setNom("User");
+                user.setPrenom("Normal");
+                user.setPassword(userPassword); // en clair
+                userService.saveUser(user);
+                System.out.println("✔ Compte user prêt");
                 
                 // ASSIGNER LES RÔLES
                 userService.addRoleToUser("admin@example.com", "ADMIN");

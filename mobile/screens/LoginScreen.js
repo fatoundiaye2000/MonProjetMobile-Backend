@@ -1,5 +1,6 @@
 // screens/LoginScreen.js
-// ✅ Bouton "Créer un compte" → RegisterScreen
+// ✅ Backend renvoie : { roles: [...], token: "..." } — PAS de userId
+// ✅ Fix : après login, on appelle /api/users/all avec le token pour trouver idUser
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
@@ -12,6 +13,12 @@ import BASE_URL from '../services/api';
 const { width, height } = Dimensions.get('window');
 const ORANGE = '#F97316';
 const BLUE   = '#2563EB';
+
+// Comptes de test pour valider rapidement le TP
+const ADMIN_EMAIL = 'admin@example.com';
+const ADMIN_PASSWORD = 'Admin123!';
+const USER_EMAIL = 'user@example.com';
+const USER_PASSWORD = 'User123!';
 
 // ─── Particule ────────────────────────────────────────────────────────────────
 function Particle({ sx, sy, size, color, duration, delay }) {
@@ -87,39 +94,66 @@ export default function LoginScreen({ navigation }) {
     ]).start();
   }, []);
 
-  const handleLogin = async () => {
-    const emailTrimmed = email.trim();
-    if (!emailTrimmed || !password) {
+  // ── Connexion ──────────────────────────────────────────────────────────────
+  const handleLogin = async (override = {}) => {
+    const emailToUse = (override.email ?? email).trim();
+    const passwordToUse = override.password ?? password;
+
+    // Mettez aussi à jour l'affichage (utile pour voir quel compte se connecte)
+    if (override.email !== undefined) setEmail(String(override.email));
+    if (override.password !== undefined) setPassword(String(override.password));
+
+    if (!emailToUse || !passwordToUse) {
       setErrMsg('Veuillez remplir tous les champs.');
       return;
     }
     setErrMsg('');
     setLoading(true);
+
     try {
-      const response = await fetch(`${BASE_URL}/login`, {
+      // ── ÉTAPE 1 : POST /login → récupère { token, roles } ─────────────────
+      const loginRes = await fetch(`${BASE_URL}/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ email: emailTrimmed, password }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ email: emailToUse, password: passwordToUse }),
       });
-      const responseText = await response.text();
-      if (!response.ok) {
+
+      const loginText = await loginRes.text();
+
+      if (!loginRes.ok) {
         let msg = 'Email ou mot de passe incorrect';
-        try { const json = JSON.parse(responseText); msg = json.message || json.error || msg; }
-        catch { if (responseText.length < 150) msg = responseText; }
+        try {
+          const json = JSON.parse(loginText);
+          msg = json.message || json.error || msg;
+        } catch { if (loginText.length < 150) msg = loginText; }
         setErrMsg(msg);
         setLoading(false);
         return;
       }
-      let data;
-      try { data = JSON.parse(responseText); }
-      catch { setErrMsg('Réponse inattendue du serveur.'); setLoading(false); return; }
 
-      const token = data.token || data.accessToken || data.jwt;
-      if (!token) { setErrMsg('Token non reçu du serveur.'); setLoading(false); return; }
+      let loginData;
+      try { loginData = JSON.parse(loginText); }
+      catch {
+        setErrMsg('Réponse inattendue du serveur.');
+        setLoading(false);
+        return;
+      }
 
-      const roles = data.roles || data.authorities || [];
+      // ✅ Le backend renvoie : { token: "...", roles: ["ADMIN", "USER"] }
+      const token = loginData.token || loginData.accessToken || loginData.jwt;
+      if (!token) {
+        setErrMsg('Token non reçu du serveur.');
+        setLoading(false);
+        return;
+      }
 
-      // Récupérer idUser via /api/users/all
+      const roles = loginData.roles || loginData.authorities || [];
+
+      // ── ÉTAPE 2 : GET /api/users/all pour trouver idUser par email ─────────
+      // (car le backend ne renvoie pas userId dans la réponse login)
       let userId = '';
       try {
         const usersRes = await fetch(`${BASE_URL}/api/users/all`, {
@@ -127,19 +161,36 @@ export default function LoginScreen({ navigation }) {
         });
         if (usersRes.ok) {
           const users = await usersRes.json();
+          // Chercher l'utilisateur dont l'email correspond
           const found = Array.isArray(users)
-            ? users.find(u => (u.email || '').toLowerCase() === emailTrimmed.toLowerCase())
+            ? users.find(u =>
+                (u.email || '').toLowerCase() === emailToUse.toLowerCase()
+              )
             : null;
-          if (found) userId = String(found.idUser || found.id || found.userId || '');
+          if (found) {
+            // Accepte idUser, id, userId selon la structure de ton entité User
+            userId = String(found.idUser || found.id || found.userId || '');
+          }
         }
-      } catch (e) { console.warn('userId non récupéré:', e.message); }
+      } catch (e) {
+        // Si /api/users/all échoue (403 ou autre), on continue sans userId
+        // Le bouton Participer affichera "non connecté" mais le login fonctionnera
+        console.warn('Impossible de récupérer userId:', e.message);
+      }
 
+      // ── ÉTAPE 3 : Tout sauvegarder dans AsyncStorage ───────────────────────
       await AsyncStorage.setItem('token',     token);
-      await AsyncStorage.setItem('userId',    userId);
-      await AsyncStorage.setItem('userEmail', emailTrimmed);
+      await AsyncStorage.setItem('userId',    userId);          // idUser de la BDD
+      await AsyncStorage.setItem('userEmail', emailToUse);
       await AsyncStorage.setItem('userRoles', JSON.stringify(roles));
 
+      console.log('✅ Login réussi');
+      console.log('✅ userId:', userId);
+      console.log('✅ roles:', roles);
+
+      // ── ÉTAPE 4 : Navigation vers la liste ────────────────────────────────
       navigation.replace('EventsList');
+
     } catch (e) {
       setErrMsg('Serveur inaccessible.\nVérifiez que le backend est démarré et que l\'IP dans api.js est correcte.');
       setLoading(false);
@@ -149,9 +200,12 @@ export default function LoginScreen({ navigation }) {
   return (
     <View style={s.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFF7ED" />
+
+      {/* Fond pastel orange */}
       <View style={s.topBg} />
       <View style={[s.deco, { width: 240, height: 240, top: -80,  right: -70, backgroundColor: ORANGE, opacity: 0.07 }]} />
       <View style={[s.deco, { width: 160, height: 160, top:  60,  left:  -50, backgroundColor: BLUE,   opacity: 0.06 }]} />
+
       {PARTS.map((p, i) => <Particle key={i} {...p} />)}
       <View style={s.bottomLine} />
 
@@ -220,11 +274,11 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Bouton Se connecter */}
+          {/* Bouton */}
           <Animated.View style={{ transform: [{ scale: btnSc }], marginTop: 6 }}>
             <TouchableOpacity
               style={[s.btn, loading && { opacity: 0.65 }]}
-              onPress={handleLogin}
+              onPress={() => handleLogin()}
               onPressIn={() => Animated.spring(btnSc, { toValue: 0.96, useNativeDriver: true }).start()}
               onPressOut={() => Animated.spring(btnSc, { toValue: 1, friction: 4, useNativeDriver: true }).start()}
               disabled={loading}
@@ -237,21 +291,35 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </Animated.View>
 
-          {/* ── Séparateur + bouton Créer un compte ── */}
-          <View style={s.sep}>
-            <View style={s.sepLine} />
-            <Text style={s.sepTxt}>PAS ENCORE DE COMPTE ?</Text>
-            <View style={s.sepLine} />
+          {/* Connexions rapides (auto) */}
+          <View style={s.quickWrap}>
+            <TouchableOpacity
+              style={[s.quickBtn, s.quickAdmin]}
+              onPress={() => handleLogin({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD })}
+              disabled={loading}
+              activeOpacity={1}
+            >
+              <Text style={s.quickBtnTxt}>Connexion Admin</Text>
+              <Text style={s.quickSubTxt}>{ADMIN_EMAIL}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[s.quickBtn, s.quickUser, s.quickBtnSecond]}
+              onPress={() => handleLogin({ email: USER_EMAIL, password: USER_PASSWORD })}
+              disabled={loading}
+              activeOpacity={1}
+            >
+              <Text style={s.quickBtnTxt}>Connexion User</Text>
+              <Text style={s.quickSubTxt}>{USER_EMAIL}</Text>
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={s.registerBtn}
-            onPress={() => navigation.navigate('Register')}
-            activeOpacity={0.85}
-          >
-            <Text style={s.registerTxt}>Créer un compte  →</Text>
-          </TouchableOpacity>
-
+          <View style={s.sep}>
+            <View style={s.sepLine} />
+            <Text style={s.sepTxt}>EVENIX</Text>
+            <View style={s.sepLine} />
+          </View>
+          <Text style={s.hint}>Connectez-vous avec votre compte Evenix</Text>
         </Animated.View>
       </KeyboardAvoidingView>
     </View>
@@ -326,17 +394,23 @@ const s = StyleSheet.create({
   },
   btnTxt: { fontSize: 16, fontWeight: '800', color: 'white', letterSpacing: 0.4 },
 
-  // Séparateur
-  sep:     { flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 14 },
-  sepLine: { flex: 1, height: 1, backgroundColor: '#FEE8D6' },
-  sepTxt:  { fontSize: 10, color: '#FDBA74', marginHorizontal: 10, fontWeight: '700', letterSpacing: 1.2 },
-
-  // Bouton Créer un compte
-  registerBtn: {
-    height: 50, borderRadius: 15,
-    backgroundColor: '#FFF7ED',
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1.5, borderColor: '#FED7AA',
+  quickWrap: { marginTop: 14 },
+  quickBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FEE8D6',
   },
-  registerTxt: { fontSize: 15, fontWeight: '700', color: ORANGE },
+  quickAdmin: { borderColor: ORANGE, backgroundColor: '#FFF1F0' },
+  quickUser: { borderColor: '#93C5FD', backgroundColor: '#EFF6FF' },
+  quickBtnTxt: { fontSize: 14, fontWeight: '900', color: '#1C0A00' },
+  quickSubTxt: { marginTop: 4, fontSize: 12, fontWeight: '700', color: '#6B7280' },
+  quickBtnSecond: { marginTop: 10 },
+
+  sep:     { flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 12 },
+  sepLine: { flex: 1, height: 1, backgroundColor: '#FEE8D6' },
+  sepTxt:  { fontSize: 10, color: '#FDBA74', marginHorizontal: 10, fontWeight: '700', letterSpacing: 1.5 },
+  hint:    { textAlign: 'center', fontSize: 12, color: '#FDBA74', lineHeight: 17 },
 });
